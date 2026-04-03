@@ -5,6 +5,37 @@ set -euo pipefail
 
 INSTALL_DIR="$HOME/.bin"
 TARGET="$INSTALL_DIR/opencode-devcontainer"
+GIT_NAME="tycoi2005"
+GIT_EMAIL="tycoi2005@opencode"
+NAME_PROVIDED=false
+EMAIL_PROVIDED=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --git-name=*)
+      GIT_NAME="${arg#--git-name=}"
+      NAME_PROVIDED=true
+      ;;
+    --git-email=*)
+      GIT_EMAIL="${arg#--git-email=}"
+      EMAIL_PROVIDED=true
+      ;;
+  esac
+done
+
+if [[ "$NAME_PROVIDED" == "false" ]]; then
+  read -r -p "Enter default git user name [${GIT_NAME}]: " INPUT_NAME
+  if [[ -n "$INPUT_NAME" ]]; then
+    GIT_NAME="$INPUT_NAME"
+  fi
+fi
+
+if [[ "$EMAIL_PROVIDED" == "false" ]]; then
+  read -r -p "Enter default git user email [${GIT_EMAIL}]: " INPUT_EMAIL
+  if [[ -n "$INPUT_EMAIL" ]]; then
+    GIT_EMAIL="$INPUT_EMAIL"
+  fi
+fi
 
 mkdir -p "$INSTALL_DIR"
 
@@ -16,6 +47,8 @@ TARGET_DIR=""
 AUTO_INIT=true
 DEVCONTAINER_IMAGE="node:22"
 DEVCONTAINER_NAME="opencode-safe"
+GIT_NAME="__GIT_NAME__"
+GIT_EMAIL="__GIT_EMAIL__"
 PASS_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -98,6 +131,12 @@ devcontainer up --workspace-folder "$TARGET_DIR" --remove-existing-container
 HOST_AUTH_FILE="$HOME/.local/share/opencode/auth.json"
 HOST_RUNTIME_CONFIG_FILE="$HOME/.config/opencode/config.json"
 
+devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'mkdir -p /root && cat > /root/.gitconfig' <<GITEOF
+[user]
+    name = $GIT_NAME
+    email = $GIT_EMAIL
+GITEOF
+
 if [[ -f "$HOST_AUTH_FILE" ]]; then
   devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'mkdir -p /root/.local/share/opencode && cat > /root/.local/share/opencode/auth.json' < "$HOST_AUTH_FILE"
 fi
@@ -121,6 +160,19 @@ INNEREOF
 
 chmod +x "$TARGET"
 
+python3 - "$TARGET" "$GIT_NAME" "$GIT_EMAIL" <<'PYEOF'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+git_name = sys.argv[2]
+git_email = sys.argv[3]
+content = path.read_text()
+content = content.replace("__GIT_NAME__", git_name)
+content = content.replace("__GIT_EMAIL__", git_email)
+path.write_text(content)
+PYEOF
+
 # Ensure ~/.bin is on PATH
 if ! echo "$PATH" | tr ':' '\n' | grep -qF "$INSTALL_DIR"; then
   if [[ -n "${BASH_VERSION:-}" ]]; then
@@ -138,3 +190,4 @@ fi
 
 echo "Installed $TARGET"
 echo "Run: opencode-devcontainer"
+echo "Default git identity: $GIT_NAME <$GIT_EMAIL>"
