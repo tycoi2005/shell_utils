@@ -60,7 +60,7 @@ CONFIG_DIR="$SCRIPT_DIR/opencode_devcontainer_config"
 
 TARGET_DIR=""
 AUTO_INIT=true
-DEVCONTAINER_IMAGE="node:22"
+DEVCONTAINER_IMAGE="opencode-devcontainer"
 DEVCONTAINER_NAME="opencode-safe"
 GIT_NAME="__GIT_NAME__"
 GIT_EMAIL="__GIT_EMAIL__"
