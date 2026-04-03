@@ -52,7 +52,7 @@ cat > "$CONFIG_DIR/opencode.json" <<'EOF'
 EOF
 
 # Generate default config
-cat > "$CONFIG_DIR/opencode_docker.json" <<'EOF'
+cat > "$CONFIG_DIR/opencode_docker.json" <<EOF
 {
   "image": "opencode-sandbox",
   "build": false,
@@ -60,7 +60,9 @@ cat > "$CONFIG_DIR/opencode_docker.json" <<'EOF'
   "state_dir": "~/.local/state/opencode-docker/",
   "shared_auth_file": "~/.local/share/opencode/auth.json",
   "shared_runtime_config_file": "~/.config/opencode/config.json",
-  "tmp_exec": true
+  "tmp_exec": true,
+  "git_name": "${GIT_NAME}",
+  "git_email": "${GIT_EMAIL}"
 }
 EOF
 
@@ -85,6 +87,8 @@ BUILD=true
 TMP_EXEC=true
 CLI_DOCKERFILE_SET=false
 REBUILD=false
+GIT_NAME=""
+GIT_EMAIL=""
 
 # Parse config if it exists
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -139,6 +143,8 @@ if [[ -f "$CONFIG_FILE" ]]; then
         BUILD_CONTEXT="$(dirname "$DOCKERFILE")"
       fi
     fi
+    GIT_NAME="$(jq -r '.git_name // empty' "$CONFIG_FILE")"
+    GIT_EMAIL="$(jq -r '.git_email // empty' "$CONFIG_FILE")"
   else
     BUILD=true
   fi
@@ -237,6 +243,14 @@ if [[ -t 0 && -t 1 ]]; then
   DOCKER_TTY_FLAGS="-it"
 fi
 
+DOCKER_ENV_ARGS=()
+if [[ -n "$GIT_NAME" ]]; then
+  DOCKER_ENV_ARGS+=(-e GIT_AUTHOR_NAME="$GIT_NAME" -e GIT_COMMITTER_NAME="$GIT_NAME")
+fi
+if [[ -n "$GIT_EMAIL" ]]; then
+  DOCKER_ENV_ARGS+=(-e GIT_AUTHOR_EMAIL="$GIT_EMAIL" -e GIT_COMMITTER_EMAIL="$GIT_EMAIL")
+fi
+
 DOCKER_BASE_ARGS=(
   --rm
   -e HOME=/root
@@ -247,6 +261,7 @@ DOCKER_BASE_ARGS=(
   "${RUNTIME_CONFIG_MOUNT_ARGS[@]}"
   -v "$OPENCODE_CONFIG:/root/.config/opencode/opencode.json:ro"
   -v "$GITCONFIG:/root/.gitconfig:ro"
+  "${DOCKER_ENV_ARGS[@]}"
   -w /workspace
   --tmpfs "/tmp:$TMP_MOUNT_OPTS"
   --security-opt no-new-privileges
