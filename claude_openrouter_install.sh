@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install script: generates claude_openrouter.sh and places it in ~/.bin
+# Install script: generates claude-openrouter and places it in ~/.bin
 
 # 1. Resolve token: prefer --token= argument, then fall back to .env
 TOKEN=""
@@ -28,10 +28,10 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-# 2. Generate claude_openrouter.sh
+# 2. Generate claude-openrouter
 INSTALL_DIR="$HOME/.bin"
 mkdir -p "$INSTALL_DIR"
-TARGET="$INSTALL_DIR/claude_openrouter.sh"
+TARGET="$INSTALL_DIR/claude-openrouter"
 
 cat > "$TARGET" <<INNEREOF
 #!/usr/bin/env bash
@@ -62,4 +62,4 @@ if ! echo "$PATH" | tr ':' '\n' | grep -qF "$INSTALL_DIR"; then
 fi
 
 echo "Installed $TARGET"
-echo "Run: claude_openrouter.sh"
+echo "Run: claude-openrouter"
