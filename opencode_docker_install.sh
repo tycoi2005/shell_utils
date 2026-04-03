@@ -181,7 +181,6 @@ DOCKER_BASE_ARGS=(
   -v "$OPENCODE_CONFIG:/root/.config/opencode/opencode.json:ro"
   -w /workspace
   --tmpfs "/tmp:$TMP_MOUNT_OPTS"
-  --tmpfs /root:rw,nosuid,size=128m
   --security-opt no-new-privileges
   --cap-drop=ALL
 )
