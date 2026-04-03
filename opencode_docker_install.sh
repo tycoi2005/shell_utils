@@ -52,7 +52,10 @@ cat > "$CONFIG_DIR/opencode_docker.json" <<'EOF'
 {
   "image": "opencode-sandbox",
   "build": false,
-  "data_dir": "~/.local/share/opencode/",
+  "data_dir": "~/.local/share/opencode-docker/",
+  "state_dir": "~/.local/state/opencode-docker/",
+  "shared_auth_file": "~/.local/share/opencode/auth.json",
+  "shared_runtime_config_file": "~/.config/opencode/config.json",
   "tmp_exec": true
 }
 EOF
@@ -66,12 +69,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="$SCRIPT_DIR/opencode_docker_config"
 CONFIG_FILE="$CONFIG_DIR/opencode_docker.json"
 IMAGE_NAME="opencode-sandbox"
-DATA_DIR="$HOME/.local/share/opencode"
+DATA_DIR="$HOME/.local/share/opencode-docker"
+STATE_DIR="$HOME/.local/state/opencode-docker"
+SHARED_AUTH_FILE="$HOME/.local/share/opencode/auth.json"
+SHARED_RUNTIME_CONFIG_FILE="$HOME/.config/opencode/config.json"
 DOCKERFILE="$CONFIG_DIR/Dockerfile"
 BUILD_CONTEXT="$CONFIG_DIR"
 OPENCODE_CONFIG="$CONFIG_DIR/opencode.json"
 BUILD=true
 TMP_EXEC=true
+CLI_DOCKERFILE_SET=false
 
 # Parse config if it exists
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -87,6 +94,26 @@ if [[ -f "$CONFIG_FILE" ]]; then
     if jq -r '.data_dir' "$CONFIG_FILE" &> /dev/null; then
       DATA_DIR="$(jq -r '.data_dir' "$CONFIG_FILE")"
       DATA_DIR="${DATA_DIR/#\~/$HOME}"
+    fi
+    if jq -r '.state_dir' "$CONFIG_FILE" &> /dev/null; then
+      STATE_DIR="$(jq -r '.state_dir' "$CONFIG_FILE")"
+      STATE_DIR="${STATE_DIR/#\~/$HOME}"
+    fi
+    if jq -r '.shared_auth_file' "$CONFIG_FILE" &> /dev/null; then
+      CONFIG_SHARED_AUTH_FILE="$(jq -r '.shared_auth_file // empty' "$CONFIG_FILE")"
+      if [[ -n "$CONFIG_SHARED_AUTH_FILE" ]]; then
+        SHARED_AUTH_FILE="${CONFIG_SHARED_AUTH_FILE/#\~/$HOME}"
+      else
+        SHARED_AUTH_FILE=""
+      fi
+    fi
+    if jq -r '.shared_runtime_config_file' "$CONFIG_FILE" &> /dev/null; then
+      CONFIG_RUNTIME_CONFIG_FILE="$(jq -r '.shared_runtime_config_file // empty' "$CONFIG_FILE")"
+      if [[ -n "$CONFIG_RUNTIME_CONFIG_FILE" ]]; then
+        SHARED_RUNTIME_CONFIG_FILE="${CONFIG_RUNTIME_CONFIG_FILE/#\~/$HOME}"
+      else
+        SHARED_RUNTIME_CONFIG_FILE=""
+      fi
     fi
     if jq -r '.tmp_exec' "$CONFIG_FILE" &> /dev/null; then
       if [[ "$(jq -r '.tmp_exec // true' "$CONFIG_FILE")" == "true" ]]; then
@@ -117,8 +144,8 @@ TARGET_SET=false
 PASS_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dockerfile=*) DOCKERFILE="${1#--dockerfile=}" ;;
-    -f) shift; DOCKERFILE="$1" ;;
+    --dockerfile=*) DOCKERFILE="${1#--dockerfile=}"; CLI_DOCKERFILE_SET=true ;;
+    -f) shift; DOCKERFILE="$1"; CLI_DOCKERFILE_SET=true ;;
     *)
       if [[ "$TARGET_SET" == "false" && -d "$1" ]]; then
         TARGET_DIR="$1"
@@ -131,6 +158,13 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Resolve Dockerfile priority: CLI > current dir > config > config_dir default
+if [[ "$CLI_DOCKERFILE_SET" == "false" ]]; then
+  if [[ -f "$(pwd)/Dockerfile" ]]; then
+    DOCKERFILE="$(pwd)/Dockerfile"
+  fi
+fi
+
 # Resolve Dockerfile to absolute path
 if [[ "$DOCKERFILE" != /* ]]; then
   DOCKERFILE="$(pwd)/$DOCKERFILE"
@@ -139,6 +173,25 @@ BUILD_CONTEXT="$(dirname "$DOCKERFILE")"
 
 # Ensure data dir exists
 mkdir -p "$DATA_DIR"
+mkdir -p "$STATE_DIR"
+
+AUTH_MOUNT_ARGS=()
+if [[ -n "$SHARED_AUTH_FILE" ]]; then
+  mkdir -p "$(dirname "$SHARED_AUTH_FILE")"
+  if [[ ! -f "$SHARED_AUTH_FILE" ]]; then
+    touch "$SHARED_AUTH_FILE"
+  fi
+  AUTH_MOUNT_ARGS=(-v "$SHARED_AUTH_FILE:/root/.local/share/opencode/auth.json")
+fi
+
+RUNTIME_CONFIG_MOUNT_ARGS=()
+if [[ -n "$SHARED_RUNTIME_CONFIG_FILE" ]]; then
+  mkdir -p "$(dirname "$SHARED_RUNTIME_CONFIG_FILE")"
+  if [[ ! -f "$SHARED_RUNTIME_CONFIG_FILE" ]]; then
+    touch "$SHARED_RUNTIME_CONFIG_FILE"
+  fi
+  RUNTIME_CONFIG_MOUNT_ARGS=(-v "$SHARED_RUNTIME_CONFIG_FILE:/root/.config/opencode/config.json")
+fi
 
 # Ensure Dockerfile exists
 if [[ ! -f "$DOCKERFILE" ]]; then
@@ -178,6 +231,9 @@ DOCKER_BASE_ARGS=(
   --rm
   -v "$TARGET_DIR:/workspace"
   -v "$DATA_DIR:/root/.local/share/opencode"
+  "${AUTH_MOUNT_ARGS[@]}"
+  -v "$STATE_DIR:/root/.local/state/opencode"
+  "${RUNTIME_CONFIG_MOUNT_ARGS[@]}"
   -v "$OPENCODE_CONFIG:/root/.config/opencode/opencode.json:ro"
   -w /workspace
   --tmpfs "/tmp:$TMP_MOUNT_OPTS"
@@ -225,6 +281,10 @@ echo "  opencode-docker -f ./Dockerfile          # Shorthand for custom Dockerfi
 echo ""
 echo "Config: $CONFIG_DIR/opencode_docker.json"
 echo "  Set \"dockerfile\": \"./path/to/Dockerfile\" in config for per-project use"
+echo "  Default \"data_dir\" is isolated to avoid SQLite corruption"
+echo "  Default \"state_dir\" is isolated to avoid SQLite corruption"
+echo "  Set \"shared_auth_file\" to share host auth.json (empty to disable)"
+echo "  Set \"shared_runtime_config_file\" to share model/provider preferences"
 echo "  Set \"tmp_exec\": false to mount /tmp with noexec"
 echo ""
 echo "Opencode config: $CONFIG_DIR/opencode.json"
