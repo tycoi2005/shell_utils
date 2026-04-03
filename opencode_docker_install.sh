@@ -9,13 +9,35 @@ CONFIG_DIR="$HOME/.bin/opencode_docker_config"
 BIN_DIR="$HOME/.bin"
 GIT_NAME="tycoi2005"
 GIT_EMAIL="tycoi2005@opencode"
+NAME_PROVIDED=false
+EMAIL_PROVIDED=false
 
 for arg in "$@"; do
   case "$arg" in
-    --name=*)  GIT_NAME="${arg#--name=}" ;;
-    --email=*) GIT_EMAIL="${arg#--email=}" ;;
+    --name=*)
+      GIT_NAME="${arg#--name=}"
+      NAME_PROVIDED=true
+      ;;
+    --email=*)
+      GIT_EMAIL="${arg#--email=}"
+      EMAIL_PROVIDED=true
+      ;;
   esac
 done
+
+if [[ "$NAME_PROVIDED" == "false" ]]; then
+  read -r -p "Enter git user name [${GIT_NAME}]: " INPUT_NAME
+  if [[ -n "${INPUT_NAME}" ]]; then
+    GIT_NAME="$INPUT_NAME"
+  fi
+fi
+
+if [[ "$EMAIL_PROVIDED" == "false" ]]; then
+  read -r -p "Enter git user email [${GIT_EMAIL}]: " INPUT_EMAIL
+  if [[ -n "${INPUT_EMAIL}" ]]; then
+    GIT_EMAIL="$INPUT_EMAIL"
+  fi
+fi
 
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 
