@@ -69,6 +69,28 @@ Install/run from GitHub:
 bash <(curl -fsSL https://raw.githubusercontent.com/tycoi2005/shell_utils/main/claude_openrouter_install.sh)
 ```
 
+### 6) `opencode_devcontainer_install.sh`
+- Purpose: Installs a global `opencode-devcontainer` command for project-scoped Dev Container workflows.
+- What it does:
+  - Installs launcher to `~/.bin/opencode-devcontainer`
+  - Uses existing `.devcontainer/devcontainer.json` if present
+  - Auto-generates `.devcontainer/devcontainer.json` when missing
+  - Sets `workspaceFolder` without duplicating workspace mounts
+  - Recreates container each run to apply image/config changes
+  - Syncs host `~/.local/share/opencode/auth.json` into container
+  - Syncs host `~/.config/opencode/config.json` into container
+  - Verifies `opencode` in-container and reinstalls `opencode-ai` if missing/broken
+  - Runs `devcontainer up` then `devcontainer exec ... opencode`
+- When to use: When you want an isolated, reproducible OpenCode environment per project.
+- Requires: Docker and `@devcontainers/cli` (the launcher checks for it).
+- Default base image: `node:22` (Debian-based for better CLI binary compatibility).
+
+Install/run from GitHub:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tycoi2005/shell_utils/main/opencode_devcontainer_install.sh)
+```
+
 ## Typical DNS Workflow
 
 1. Flush DNS cache and clear resolver config:
