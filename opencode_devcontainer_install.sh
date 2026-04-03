@@ -51,6 +51,15 @@ cat > "$CONFIG_DIR/opencode.json" <<'EOF'
 }
 EOF
 
+cat > "$CONFIG_DIR/Dockerfile" <<'DOCKEREOF'
+FROM node:22
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ripgrep jq fd-find bat less procps ca-certificates curl dnsutils iputils-ping tree unzip zip nano \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g opencode-ai
+WORKDIR /workspace
+DOCKEREOF
+
 cat > "$TARGET" <<'INNEREOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -60,7 +69,7 @@ CONFIG_DIR="$SCRIPT_DIR/opencode_devcontainer_config"
 
 TARGET_DIR=""
 AUTO_INIT=true
-DEVCONTAINER_IMAGE="opencode-devcontainer"
+DEVCONTAINER_IMAGE="node:22"
 DEVCONTAINER_NAME="opencode-safe"
 GIT_NAME="__GIT_NAME__"
 GIT_EMAIL="__GIT_EMAIL__"
@@ -125,10 +134,13 @@ if [[ ! -f "$DEVCONTAINER_FILE" ]]; then
   fi
 
   mkdir -p "$DEVCONTAINER_DIR"
+  cp "$CONFIG_DIR/Dockerfile" "$DEVCONTAINER_DIR/Dockerfile"
   cat > "$DEVCONTAINER_FILE" <<JSONEOF
 {
   "name": "$DEVCONTAINER_NAME",
-  "image": "$DEVCONTAINER_IMAGE",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "workspaceFolder": "/workspaces/\${localWorkspaceFolderBasename}",
   "postCreateCommand": "npm install -g opencode-ai",
   "remoteEnv": {
