@@ -7,8 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$HOME/.bin"
 CONFIG_DIR="$HOME/.bin/opencode_docker_config"
 BIN_DIR="$HOME/.bin"
-GIT_NAME="jakenty"
-GIT_EMAIL="jakenty@opencode"
+GIT_NAME="tycoi2005"
+GIT_EMAIL="tycoi2005@opencode"
 
 for arg in "$@"; do
   case "$arg" in
@@ -23,7 +23,9 @@ mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 cat > "$CONFIG_DIR/Dockerfile" <<'DOCKEREOF'
 FROM node:22
 
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ripgrep jq fd-find bat less procps ca-certificates curl dnsutils iputils-ping tree unzip zip nano \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g opencode-ai opencode-vibeguard @nguquen/opencode-anthropic-auth@0.0.14
 
