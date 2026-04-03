@@ -31,16 +31,6 @@ ENTRYPOINT ["opencode"]
 CMD []
 DOCKEREOF
 
-sed -i '' "s/GIT_NAME_PLACEHOLDER/${GIT_NAME}/g" "$CONFIG_DIR/Dockerfile"
-sed -i '' "s/GIT_EMAIL_PLACEHOLDER/${GIT_EMAIL}/g" "$CONFIG_DIR/Dockerfile"
-
-# Generate gitconfig
-cat > "$CONFIG_DIR/.gitconfig" <<EOF
-[user]
-	name = ${GIT_NAME}
-	email = ${GIT_EMAIL}
-EOF
-
 # Generate gitconfig
 cat > "$CONFIG_DIR/.gitconfig" <<EOF
 [user]
@@ -92,7 +82,6 @@ GITCONFIG="$CONFIG_DIR/.gitconfig"
 BUILD=true
 TMP_EXEC=true
 CLI_DOCKERFILE_SET=false
-REBUILD=false
 REBUILD=false
 
 # Parse config if it exists
@@ -161,7 +150,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dockerfile=*) DOCKERFILE="${1#--dockerfile=}"; CLI_DOCKERFILE_SET=true ;;
     -f) shift; DOCKERFILE="$1"; CLI_DOCKERFILE_SET=true ;;
-    --rebuild) REBUILD=true ;;
     --rebuild) REBUILD=true ;;
     *)
       if [[ "$TARGET_SET" == "false" && -d "$1" ]]; then
@@ -255,7 +243,6 @@ DOCKER_BASE_ARGS=(
   -v "$STATE_DIR:/root/.local/state/opencode"
   "${RUNTIME_CONFIG_MOUNT_ARGS[@]}"
   -v "$OPENCODE_CONFIG:/root/.config/opencode/opencode.json:ro"
-  -v "$GITCONFIG:/root/.gitconfig:ro"
   -v "$GITCONFIG:/root/.gitconfig:ro"
   -w /workspace
   --tmpfs "/tmp:$TMP_MOUNT_OPTS"
