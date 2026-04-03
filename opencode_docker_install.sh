@@ -213,20 +213,12 @@ mkdir -p "$DATA_DIR"
 mkdir -p "$STATE_DIR"
 
 AUTH_MOUNT_ARGS=()
-if [[ -n "$SHARED_AUTH_FILE" ]]; then
-  mkdir -p "$(dirname "$SHARED_AUTH_FILE")"
-  if [[ ! -f "$SHARED_AUTH_FILE" ]]; then
-    touch "$SHARED_AUTH_FILE"
-  fi
+if [[ -n "$SHARED_AUTH_FILE" && -f "$SHARED_AUTH_FILE" ]]; then
   AUTH_MOUNT_ARGS=(-v "$SHARED_AUTH_FILE:/root/.local/share/opencode/auth.json")
 fi
 
 RUNTIME_CONFIG_MOUNT_ARGS=()
-if [[ -n "$SHARED_RUNTIME_CONFIG_FILE" ]]; then
-  mkdir -p "$(dirname "$SHARED_RUNTIME_CONFIG_FILE")"
-  if [[ ! -f "$SHARED_RUNTIME_CONFIG_FILE" ]]; then
-    touch "$SHARED_RUNTIME_CONFIG_FILE"
-  fi
+if [[ -n "$SHARED_RUNTIME_CONFIG_FILE" && -f "$SHARED_RUNTIME_CONFIG_FILE" ]]; then
   RUNTIME_CONFIG_MOUNT_ARGS=(-v "$SHARED_RUNTIME_CONFIG_FILE:/root/.config/opencode/config.json")
 fi
 

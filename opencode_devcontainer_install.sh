@@ -4,6 +4,7 @@ set -euo pipefail
 # Install script: generates opencode-devcontainer and places it in ~/.bin
 
 INSTALL_DIR="$HOME/.bin"
+CONFIG_DIR="$HOME/.bin/opencode_devcontainer_config"
 TARGET="$INSTALL_DIR/opencode-devcontainer"
 GIT_NAME="tycoi2005"
 GIT_EMAIL="tycoi2005@opencode"
@@ -37,11 +38,25 @@ if [[ "$EMAIL_PROVIDED" == "false" ]]; then
   fi
 fi
 
-mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
+
+# Generate opencode config
+cat > "$CONFIG_DIR/opencode.json" <<'EOF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
+  "plugin": [
+    "@nguquen/opencode-anthropic-auth@0.0.14"
+  ]
+}
+EOF
 
 cat > "$TARGET" <<'INNEREOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="$SCRIPT_DIR/opencode_devcontainer_config"
 
 TARGET_DIR=""
 AUTO_INIT=true
@@ -120,16 +135,39 @@ if [[ ! -f "$DEVCONTAINER_FILE" ]]; then
     "ANTHROPIC_API_KEY": "\${localEnv:ANTHROPIC_API_KEY}",
     "ANTHROPIC_AUTH_TOKEN": "\${localEnv:ANTHROPIC_AUTH_TOKEN}",
     "OPENAI_API_KEY": "\${localEnv:OPENAI_API_KEY}"
-  }
+  },
+  "mounts": [
+    "source=\${localEnv:HOME}/.config/opencode/config.json,target=/root/.config/opencode/config.json,type=bind,consistency=cached",
+    "source=\${localEnv:HOME}/.local/share/opencode/auth.json,target=/root/.local/share/opencode/auth.json,type=bind,consistency=cached",
+    "source=\${localEnv:HOME}/.local/share/opencode-devcontainer,target=/root/.local/share/opencode,type=bind,consistency=cached",
+    "source=\${localEnv:HOME}/.local/state/opencode-devcontainer,target=/root/.local/state/opencode,type=bind,consistency=cached"
+  ]
 }
 JSONEOF
   printf 'Created %s\n' "$DEVCONTAINER_FILE"
 fi
 
-devcontainer up --workspace-folder "$TARGET_DIR" --remove-existing-container
-
 HOST_AUTH_FILE="$HOME/.local/share/opencode/auth.json"
 HOST_RUNTIME_CONFIG_FILE="$HOME/.config/opencode/config.json"
+OPENCODE_CONFIG="$CONFIG_DIR/opencode.json"
+
+DATA_DIR="$HOME/.local/share/opencode-devcontainer"
+STATE_DIR="$HOME/.local/state/opencode-devcontainer"
+mkdir -p "$DATA_DIR"
+mkdir -p "$STATE_DIR"
+
+CONTAINER_ID=""
+
+cleanup() {
+  echo "Stopping devcontainer..."
+  if [[ -n "$CONTAINER_ID" ]]; then
+    docker stop "$CONTAINER_ID" 2>/dev/null || true
+    docker rm -f "$CONTAINER_ID" 2>/dev/null || true
+  fi
+  devcontainer down --workspace-folder "$TARGET_DIR" 2>/dev/null || true
+}
+
+CONTAINER_ID=$(devcontainer up --workspace-folder "$TARGET_DIR" --remove-existing-container 2>/dev/null | grep -o '"containerId":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
 
 devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'mkdir -p /root && cat > /root/.gitconfig' <<GITEOF
 [user]
@@ -145,16 +183,22 @@ if [[ -f "$HOST_RUNTIME_CONFIG_FILE" ]]; then
   devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'mkdir -p /root/.config/opencode && cat > /root/.config/opencode/config.json' < "$HOST_RUNTIME_CONFIG_FILE"
 fi
 
+if [[ -f "$OPENCODE_CONFIG" ]]; then
+  devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'mkdir -p /root/.config/opencode && cp /root/.config/opencode/opencode.json /root/.config/opencode/opencode.json.bak 2>/dev/null; cat > /root/.config/opencode/opencode.json' < "$OPENCODE_CONFIG"
+fi
+
 devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc '
 if ! opencode --version >/dev/null 2>&1; then
   npm install -g --force opencode-ai
 fi
 '
 
+trap cleanup EXIT
+
 if [[ ${#PASS_ARGS[@]} -gt 0 ]]; then
-  exec devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'exec opencode "$@"' _ "${PASS_ARGS[@]}"
+  devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'exec opencode "$@"' _ "${PASS_ARGS[@]}"
 else
-  exec devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'exec opencode'
+  devcontainer exec --workspace-folder "$TARGET_DIR" sh -lc 'exec opencode'
 fi
 INNEREOF
 
