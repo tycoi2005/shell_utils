@@ -19,13 +19,11 @@ done
 
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 
-# Generate Dockerfile with git config and vibeguard plugin
+# Generate Dockerfile
 cat > "$CONFIG_DIR/Dockerfile" <<'DOCKEREOF'
 FROM node:22
 
-RUN npm install -g opencode-ai opencode-vibeguard @nguquen/opencode-anthropic-auth@0.0.14 && \
-    git config --global user.name "GIT_NAME_PLACEHOLDER"; \
-    git config --global user.email "GIT_EMAIL_PLACEHOLDER"
+RUN npm install -g opencode-ai opencode-vibeguard @nguquen/opencode-anthropic-auth@0.0.14
 
 WORKDIR /workspace
 
@@ -35,6 +33,20 @@ DOCKEREOF
 
 sed -i '' "s/GIT_NAME_PLACEHOLDER/${GIT_NAME}/g" "$CONFIG_DIR/Dockerfile"
 sed -i '' "s/GIT_EMAIL_PLACEHOLDER/${GIT_EMAIL}/g" "$CONFIG_DIR/Dockerfile"
+
+# Generate gitconfig
+cat > "$CONFIG_DIR/.gitconfig" <<EOF
+[user]
+	name = ${GIT_NAME}
+	email = ${GIT_EMAIL}
+EOF
+
+# Generate gitconfig
+cat > "$CONFIG_DIR/.gitconfig" <<EOF
+[user]
+	name = ${GIT_NAME}
+	email = ${GIT_EMAIL}
+EOF
 
 # Generate opencode config
 cat > "$CONFIG_DIR/opencode.json" <<'EOF'
@@ -76,9 +88,12 @@ SHARED_RUNTIME_CONFIG_FILE="$HOME/.config/opencode/config.json"
 DOCKERFILE="$CONFIG_DIR/Dockerfile"
 BUILD_CONTEXT="$CONFIG_DIR"
 OPENCODE_CONFIG="$CONFIG_DIR/opencode.json"
+GITCONFIG="$CONFIG_DIR/.gitconfig"
 BUILD=true
 TMP_EXEC=true
 CLI_DOCKERFILE_SET=false
+REBUILD=false
+REBUILD=false
 
 # Parse config if it exists
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -146,6 +161,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dockerfile=*) DOCKERFILE="${1#--dockerfile=}"; CLI_DOCKERFILE_SET=true ;;
     -f) shift; DOCKERFILE="$1"; CLI_DOCKERFILE_SET=true ;;
+    --rebuild) REBUILD=true ;;
+    --rebuild) REBUILD=true ;;
     *)
       if [[ "$TARGET_SET" == "false" && -d "$1" ]]; then
         TARGET_DIR="$1"
@@ -204,8 +221,11 @@ if [[ "$TMP_EXEC" == "true" ]]; then
   TMP_MOUNT_OPTS="rw,exec,nosuid,size=512m"
 fi
 
-# Build image if needed or requested
-if [[ "$BUILD" == "true" ]] || ! docker image inspect "$IMAGE_NAME" &> /dev/null; then
+# Build image if needed, requested, or forced via --rebuild
+if [[ "$REBUILD" == "true" ]]; then
+  echo "Rebuilding Docker image $IMAGE_NAME..."
+  docker build --no-cache -t "$IMAGE_NAME" -f "$DOCKERFILE" "$BUILD_CONTEXT"
+elif [[ "$BUILD" == "true" ]] || ! docker image inspect "$IMAGE_NAME" &> /dev/null; then
   echo "Building Docker image $IMAGE_NAME..."
   docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" "$BUILD_CONTEXT"
 fi
@@ -235,6 +255,8 @@ DOCKER_BASE_ARGS=(
   -v "$STATE_DIR:/root/.local/state/opencode"
   "${RUNTIME_CONFIG_MOUNT_ARGS[@]}"
   -v "$OPENCODE_CONFIG:/root/.config/opencode/opencode.json:ro"
+  -v "$GITCONFIG:/root/.gitconfig:ro"
+  -v "$GITCONFIG:/root/.gitconfig:ro"
   -w /workspace
   --tmpfs "/tmp:$TMP_MOUNT_OPTS"
   --security-opt no-new-privileges
@@ -278,6 +300,7 @@ echo "  opencode-docker                          # Run in current directory"
 echo "  opencode-docker /path/to/dir             # Run in specific directory"
 echo "  opencode-docker --dockerfile=./Dockerfile # Use custom Dockerfile"
 echo "  opencode-docker -f ./Dockerfile          # Shorthand for custom Dockerfile"
+echo "  opencode-docker --rebuild                # Force rebuild of Docker image"
 echo ""
 echo "Config: $CONFIG_DIR/opencode_docker.json"
 echo "  Set \"dockerfile\": \"./path/to/Dockerfile\" in config for per-project use"
