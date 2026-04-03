@@ -23,6 +23,8 @@ mkdir -p "$INSTALL_DIR" "$CONFIG_DIR"
 cat > "$CONFIG_DIR/Dockerfile" <<'DOCKEREOF'
 FROM node:22
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g opencode-ai opencode-vibeguard @nguquen/opencode-anthropic-auth@0.0.14
 
 WORKDIR /workspace
@@ -237,6 +239,7 @@ fi
 
 DOCKER_BASE_ARGS=(
   --rm
+  -e HOME=/root
   -v "$TARGET_DIR:/workspace"
   -v "$DATA_DIR:/root/.local/share/opencode"
   "${AUTH_MOUNT_ARGS[@]}"
