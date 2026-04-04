@@ -10,16 +10,15 @@ OPENCODE_FEATURE="ghcr.io/danzilberdan/devcontainers/opencode:0"
 OPENCODE_SHARE="${HOME}/.local/share/opencode"
 OPENCODE_CONFIG="${HOME}/.config/opencode"
 
+# Container user — "root" keeps things simple (matches opencode-docker).
+# The devcontainer base image defaults to "vscode" (home=/home/vscode),
+# but opencode inside the feature runs as whatever remoteUser is set to.
+CONTAINER_USER="root"
+
 AUTH_SRC="${OPENCODE_SHARE}/auth.json"
 MODEL_SRC="${HOME}/.local/state/opencode/model.json"
 CONFIG_SRC="${OPENCODE_CONFIG}/opencode.json"
 RUNTIME_CONFIG_SRC="${OPENCODE_CONFIG}/config.json"
-
-# Mount directly to their final destinations for two-way sync (OAuth persistence)
-AUTH_TARGET="/root/.local/share/opencode/auth.json"
-MODEL_TARGET="/root/.local/state/opencode/model.json"
-CONFIG_TARGET="/root/.config/opencode/opencode.json"
-RUNTIME_CONFIG_TARGET="/root/.config/opencode/config.json"
 
 DEVCONTAINER_DIR=".devcontainer"
 DEVCONTAINER_FILE="${DEVCONTAINER_DIR}/devcontainer.json"
@@ -29,10 +28,24 @@ GIT_EMAIL="tycoi2005@opencode"
 
 for arg in "$@"; do
   case "$arg" in
-    --git-name=*)  GIT_NAME="${arg#--git-name=}" ;;
-    --git-email=*) GIT_EMAIL="${arg#--git-email=}" ;;
+    --git-name=*)       GIT_NAME="${arg#--git-name=}" ;;
+    --git-email=*)      GIT_EMAIL="${arg#--git-email=}" ;;
+    --container-user=*) CONTAINER_USER="${arg#--container-user=}" ;;
   esac
 done
+
+# Compute container home from user
+if [[ "$CONTAINER_USER" == "root" ]]; then
+  CONTAINER_HOME="/root"
+else
+  CONTAINER_HOME="/home/${CONTAINER_USER}"
+fi
+
+# Mount directly to their final destinations for two-way sync (OAuth persistence)
+AUTH_TARGET="${CONTAINER_HOME}/.local/share/opencode/auth.json"
+MODEL_TARGET="${CONTAINER_HOME}/.local/state/opencode/model.json"
+CONFIG_TARGET="${CONTAINER_HOME}/.config/opencode/opencode.json"
+RUNTIME_CONFIG_TARGET="${CONTAINER_HOME}/.config/opencode/config.json"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 info()    { print -P "%F{cyan}[info]%f  $*" }
@@ -52,14 +65,15 @@ require docker
 if [[ ! -f "$DEVCONTAINER_FILE" ]]; then
   info "No devcontainer.json found — creating one."
   mkdir -p "$DEVCONTAINER_DIR"
-  cat > "$DEVCONTAINER_FILE" <<'EOF'
+  cat > "$DEVCONTAINER_FILE" <<DCEOF
 {
   "name": "Dev Container",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "remoteUser": "${CONTAINER_USER}",
   "features": {},
   "mounts": []
 }
-EOF
+DCEOF
   success "Created ${DEVCONTAINER_FILE}"
 fi
 
@@ -86,6 +100,16 @@ if [[ "$HAS_FEATURE" == "false" ]]; then
   success "Added feature: ${OPENCODE_FEATURE}"
 else
   info "opencode feature already present, skipping."
+fi
+
+# ── 4b. Ensure remoteUser is set correctly ────────────────────────────────────
+CURRENT_USER=$(echo "$UPDATED" | jq -r '.remoteUser // empty')
+if [[ "$CURRENT_USER" != "$CONTAINER_USER" ]]; then
+  info "Setting remoteUser to '${CONTAINER_USER}'..."
+  UPDATED=$(echo "$UPDATED" | jq --arg u "$CONTAINER_USER" '.remoteUser = $u')
+  success "remoteUser set to '${CONTAINER_USER}'"
+else
+  info "remoteUser already set to '${CONTAINER_USER}', skipping."
 fi
 
 # ── 5. Ensure correct mounts (remove stale, add missing) ─────────────────────
