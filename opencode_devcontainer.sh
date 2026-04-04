@@ -170,8 +170,25 @@ ensure_mount() {
 
 ensure_mount "$AUTH_SRC"           "$AUTH_TARGET"           "auth.json"
 ensure_mount "$MODEL_SRC"          "$MODEL_TARGET"          "model.json"
-ensure_mount "$CONFIG_SRC"         "$CONFIG_TARGET"         "opencode.json"
 ensure_mount "$RUNTIME_CONFIG_SRC" "$RUNTIME_CONFIG_TARGET" "config.json"
+
+# Delete any existing opencode.json mounts as we generate it dynamically
+UPDATED=$(echo "$UPDATED" | jq '
+  .mounts = [
+    .mounts[]? |
+    select(
+      type == "string" and (
+        contains("opencode/opencode.json") | not
+      )
+    )
+  ]')
+
+# Inject postCreateCommand to generate opencode.json inside the container
+info "Configuring inline opencode.json..."
+UPDATED=$(echo "$UPDATED" | jq '
+  .postCreateCommand = "mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json <<'\''EOF'\''\n{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"permission\": \"allow\",\n  \"plugin\": [\n    \"@nguquen/opencode-anthropic-auth@0.0.14\",\n    \"opencode-vibeguard\"\n  ]\n}\nEOF"
+')
+
 
 # ── 6. Write back only if changed ─────────────────────────────────────────────
 # Normalize both for comparison (jq sorts keys consistently)

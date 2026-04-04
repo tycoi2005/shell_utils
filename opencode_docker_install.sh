@@ -70,7 +70,8 @@ cat > "$CONFIG_DIR/opencode.json" <<'EOF'
   "$schema": "https://opencode.ai/config.json",
   "permission": "allow",
   "plugin": [
-    "@nguquen/opencode-anthropic-auth@0.0.14"
+    "@nguquen/opencode-anthropic-auth@0.0.14",
+    "opencode-vibeguard"
   ]
 }
 EOF
