@@ -61,52 +61,42 @@ require() {
 require jq
 require docker
 
-# ── 1. Create .devcontainer/devcontainer.json if missing ──────────────────────
-if [[ ! -f "$DEVCONTAINER_FILE" ]]; then
-  info "No devcontainer.json found — creating one."
+# ── 2. Initialize .devcontainer/devcontainer.json if missing/invalid ──────────
+if [[ ! -f "$DEVCONTAINER_FILE" || ! -s "$DEVCONTAINER_FILE" ]] || ! jq -e . "$DEVCONTAINER_FILE" &>/dev/null; then
+  info "devcontainer.json missing or invalid — initializing with default."
   mkdir -p "$DEVCONTAINER_DIR"
-  cat > "$DEVCONTAINER_FILE" <<DCEOF
-{
-  "name": "Dev Container",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-  "remoteUser": "${CONTAINER_USER}",
-  "features": {},
-  "mounts": []
-}
-DCEOF
-  success "Created ${DEVCONTAINER_FILE}"
+  printf '{\n  "name": "Dev Container",\n  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",\n  "remoteUser": "%s",\n  "features": {},\n  "mounts": []\n}\n' "$CONTAINER_USER" > "$DEVCONTAINER_FILE"
 fi
 
-# ── 2. Read current file ───────────────────────────────────────────────────────
 ORIGINAL=$(cat "$DEVCONTAINER_FILE")
 UPDATED="$ORIGINAL"
 
 # ── 3. Add image if missing ───────────────────────────────────────────────────
-HAS_IMAGE=$(echo "$UPDATED" | jq 'if .image or .dockerFile or .dockerComposeFile then true else false end')
+HAS_IMAGE=$(printf '%s\n' "$UPDATED" | jq 'if .image or .dockerFile or .dockerComposeFile then true else false end')
 if [[ "$HAS_IMAGE" == "false" ]]; then
   info "No image specified — adding default base image..."
-  UPDATED=$(echo "$UPDATED" | jq '.image = "mcr.microsoft.com/devcontainers/base:ubuntu"')
+    UPDATED=$(printf '%s\n' "$UPDATED" | jq -c '.image = "mcr.microsoft.com/devcontainers/base:ubuntu"')
   success "Added image: mcr.microsoft.com/devcontainers/base:ubuntu"
 else
   info "Image already specified, skipping."
 fi
 
 # ── 4. Add opencode feature if missing ────────────────────────────────────────
-HAS_FEATURE=$(echo "$UPDATED" | jq --arg f "$OPENCODE_FEATURE" \
+HAS_FEATURE=$(printf '%s\n' "$UPDATED" | jq --arg f "$OPENCODE_FEATURE" \
   'if .features | has($f) then true else false end')
 if [[ "$HAS_FEATURE" == "false" ]]; then
   info "Adding opencode feature..."
-  UPDATED=$(echo "$UPDATED" | jq --arg f "$OPENCODE_FEATURE" '.features[$f] = {}')
+  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg f "$OPENCODE_FEATURE" '.features[$f] = {}')
   success "Added feature: ${OPENCODE_FEATURE}"
 else
   info "opencode feature already present, skipping."
 fi
 
 # ── 4b. Ensure remoteUser is set correctly ────────────────────────────────────
-CURRENT_USER=$(echo "$UPDATED" | jq -r '.remoteUser // empty')
+CURRENT_USER=$(printf '%s\n' "$UPDATED" | jq -r '.remoteUser // empty')
 if [[ "$CURRENT_USER" != "$CONTAINER_USER" ]]; then
   info "Setting remoteUser to '${CONTAINER_USER}'..."
-  UPDATED=$(echo "$UPDATED" | jq --arg u "$CONTAINER_USER" '.remoteUser = $u')
+  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg u "$CONTAINER_USER" '.remoteUser = $u')
   success "remoteUser set to '${CONTAINER_USER}'"
 else
   info "remoteUser already set to '${CONTAINER_USER}', skipping."
@@ -117,7 +107,7 @@ fi
 remove_wrong_mounts() {
   local correct_target="$1" label="$2"
   # Find any mount that references this label's known filenames but with wrong target
-  UPDATED=$(echo "$UPDATED" | jq \
+    UPDATED=$(printf '%s\n' "$UPDATED" | jq -c \
     --arg ct "$correct_target" \
     --arg auth "opencode-auth.json" \
     --arg model "opencode/model.json" \
@@ -148,7 +138,7 @@ ensure_mount() {
 
   # Check if exact correct mount already exists
   local has_exact
-  has_exact=$(echo "$UPDATED" | jq --arg m "$mount_str" \
+  has_exact=$(printf '%s\n' "$UPDATED" | jq --arg m "$mount_str" \
     'if .mounts then (.mounts | map(select(. == $m)) | length > 0) else false end')
 
   if [[ "$has_exact" == "true" ]]; then
@@ -158,7 +148,7 @@ ensure_mount() {
 
   # Remove any existing mount touching this target's path fragments, then add correct one
   info "Updating mount for ${label}..."
-  UPDATED=$(echo "$UPDATED" | jq \
+  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c \
     --arg target "$target" \
     --arg src "$src" '
     .mounts = (
@@ -173,7 +163,7 @@ ensure_mount "$MODEL_SRC"          "$MODEL_TARGET"          "model.json"
 ensure_mount "$RUNTIME_CONFIG_SRC" "$RUNTIME_CONFIG_TARGET" "config.json"
 
 # Delete any existing opencode.json mounts as we generate it dynamically
-UPDATED=$(echo "$UPDATED" | jq '
+UPDATED=$(printf '%s\n' "$UPDATED" | jq -c '
   .mounts = [
     .mounts[]? |
     select(
@@ -185,21 +175,29 @@ UPDATED=$(echo "$UPDATED" | jq '
 
 # Inject postCreateCommand to generate opencode.json inside the container
 info "Configuring inline opencode.json..."
-UPDATED=$(echo "$UPDATED" | jq '
-  .postCreateCommand = "mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json <<'\''EOF'\''\n{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"permission\": \"allow\",\n  \"plugin\": [\n    \"@nguquen/opencode-anthropic-auth@0.0.14\",\n    \"opencode-vibeguard\"\n  ]\n}\nEOF"
-')
+COMMAND='mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json << '"'"'EOF'"'"'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
+  "plugin": [
+    "@nguquen/opencode-anthropic-auth@0.0.14",
+    "opencode-vibeguard"
+  ]
+}
+EOF'
 
+UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg cmd "$COMMAND" '.postCreateCommand = $cmd')
 
 # ── 6. Write back only if changed ─────────────────────────────────────────────
 # Normalize both for comparison (jq sorts keys consistently)
-ORIGINAL_NORM=$(echo "$ORIGINAL" | jq -Sc .)
-UPDATED_NORM=$(echo "$UPDATED" | jq -Sc .)
+ORIGINAL_NORM=$(printf '%s\n' "$ORIGINAL" | jq -Sc .)
+UPDATED_NORM=$(printf '%s\n' "$UPDATED" | jq -Sc .)
 
 if [[ "$UPDATED_NORM" == "$ORIGINAL_NORM" ]]; then
   success "devcontainer.json already up-to-date — nothing to write."
   CHANGED=false
 else
-  echo "$UPDATED" | jq '.' > "$DEVCONTAINER_FILE"
+  printf '%s\n' "$UPDATED" | jq '.' > "$DEVCONTAINER_FILE"
   success "devcontainer.json updated."
   CHANGED=true
 fi
