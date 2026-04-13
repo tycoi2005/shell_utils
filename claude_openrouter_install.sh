@@ -5,9 +5,9 @@ set -euo pipefail
 
 # 1. Resolve token: prefer --token= argument, then fall back to .env
 TOKEN=""
-OPUS_MODEL="qwen/qwen3.6-plus:free"
-SONNET_MODEL="qwen/qwen3.6-plus:free"
-HAIKU_MODEL="qwen/qwen3.6-plus:free"
+OPUS_MODEL="openrouter/free"
+SONNET_MODEL="openrouter/free"
+HAIKU_MODEL="openrouter/free"
 
 for arg in "$@"; do
   case "$arg" in

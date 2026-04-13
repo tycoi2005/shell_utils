@@ -17,7 +17,6 @@ CONTAINER_USER="root"
 
 AUTH_SRC="${OPENCODE_SHARE}/auth.json"
 MODEL_SRC="${HOME}/.local/state/opencode/model.json"
-CONFIG_SRC="${OPENCODE_CONFIG}/opencode.json"
 RUNTIME_CONFIG_SRC="${OPENCODE_CONFIG}/config.json"
 
 DEVCONTAINER_DIR=".devcontainer"
@@ -61,6 +60,11 @@ require() {
 require jq
 require docker
 
+# Ensure Docker daemon is reachable before invoking devcontainer commands.
+if ! docker info >/dev/null 2>&1; then
+  error "Docker is installed but the daemon is not reachable. Start Docker Desktop (or your Docker engine) and retry."
+fi
+
 # ── 2. Initialize .devcontainer/devcontainer.json if missing/invalid ──────────
 if [[ ! -f "$DEVCONTAINER_FILE" || ! -s "$DEVCONTAINER_FILE" ]] || ! jq -e . "$DEVCONTAINER_FILE" &>/dev/null; then
   info "devcontainer.json missing or invalid — initializing with default."
@@ -92,7 +96,44 @@ else
   info "opencode feature already present, skipping."
 fi
 
-# ── 4b. Ensure remoteUser is set correctly ────────────────────────────────────
+# ── 4a. Add github-cli feature if missing ─────────────────────────────────────
+# Use the stable major tag so the feature can resolve reliably.
+GH_FEATURE="ghcr.io/devcontainers/features/github-cli:1"
+HAS_GH_FEATURE=$(printf '%s\n' "$UPDATED" | jq --arg f "$GH_FEATURE" \
+  'if .features | has($f) then true else false end')
+if [[ "$HAS_GH_FEATURE" == "false" ]]; then
+  info "Adding github-cli feature..."
+  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg f "$GH_FEATURE" '.features[$f] = {}')
+  success "Added feature: ${GH_FEATURE}"
+else
+  info "github-cli feature already present, skipping."
+fi
+
+# ── 4c. Add python feature if missing ──────────────────────────────────────────
+PYTHON_FEATURE="ghcr.io/devcontainers/features/python:1"
+HAS_PYTHON_FEATURE=$(printf '%s\n' "$UPDATED" | jq --arg f "$PYTHON_FEATURE" \
+  'if .features | has($f) then true else false end')
+if [[ "$HAS_PYTHON_FEATURE" == "false" ]]; then
+  info "Adding python feature..."
+  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg f "$PYTHON_FEATURE" '.features[$f] = {}')
+  success "Added feature: ${PYTHON_FEATURE}"
+else
+  info "python feature already present, skipping."
+fi
+
+# ── 4d. Add node feature if missing ───────────────────────────────────────────
+NODE_FEATURE="ghcr.io/devcontainers/features/node:1"
+HAS_NODE_FEATURE=$(printf '%s\n' "$UPDATED" | jq --arg f "$NODE_FEATURE" \
+  'if .features | has($f) then true else false end')
+if [[ "$HAS_NODE_FEATURE" == "false" ]]; then
+  info "Adding node feature..."
+  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg f "$NODE_FEATURE" '.features[$f] = {}')
+  success "Added feature: ${NODE_FEATURE}"
+else
+  info "node feature already present, skipping."
+fi
+
+# ── 4e. Ensure remoteUser is set correctly ────────────────────────────────────
 CURRENT_USER=$(printf '%s\n' "$UPDATED" | jq -r '.remoteUser // empty')
 if [[ "$CURRENT_USER" != "$CONTAINER_USER" ]]; then
   info "Setting remoteUser to '${CONTAINER_USER}'..."
@@ -103,29 +144,6 @@ else
 fi
 
 # ── 5. Ensure correct mounts (remove stale, add missing) ─────────────────────
-# Remove any mount whose target doesn't match what we want
-remove_wrong_mounts() {
-  local correct_target="$1" label="$2"
-  # Find any mount that references this label's known filenames but with wrong target
-    UPDATED=$(printf '%s\n' "$UPDATED" | jq -c \
-    --arg ct "$correct_target" \
-    --arg auth "opencode-auth.json" \
-    --arg model "opencode/model.json" \
-    --arg cfg "opencode/config.json" \
-    --arg cfg2 "opencode/opencode.json" '
-    .mounts = [
-      .mounts[]? |
-      select(
-        type == "string" and (
-          (contains("opencode-auth") or contains("opencode/auth") or
-           contains("opencode/model") or contains("opencode/config") or
-           contains("opencode/opencode")) |
-          not
-        ) or contains($ct)
-      )
-    ]')
-}
-
 ensure_mount() {
   local src="$1" target="$2" label="$3"
 
@@ -173,8 +191,8 @@ UPDATED=$(printf '%s\n' "$UPDATED" | jq -c '
     )
   ]')
 
-# Inject postCreateCommand to generate opencode.json inside the container
-info "Configuring inline opencode.json..."
+# Inject postCreateCommand to generate opencode.json and install pytest
+info "Configuring inline opencode.json and Python tools..."
 COMMAND='mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json << '"'"'EOF'"'"'
 {
   "$schema": "https://opencode.ai/config.json",
@@ -184,7 +202,8 @@ COMMAND='mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json <
     "opencode-vibeguard"
   ]
 }
-EOF'
+EOF
+pip install --break-system-packages pytest 2>/dev/null || pip install pytest'
 
 UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg cmd "$COMMAND" '.postCreateCommand = $cmd')
 
@@ -246,12 +265,45 @@ if [[ -n "$GIT_NAME" && -n "$GIT_EMAIL" ]]; then
   success "Git identity set: $GIT_NAME <$GIT_EMAIL>"
 fi
 
-# ── 12. Run opencode inside the container ─────────────────────────────────────
+# ── 12. Ensure GitHub CLI is available in-container ───────────────────────────
+info "Checking for GitHub CLI (gh) inside container..."
+if devcontainer exec --workspace-folder . sh -lc 'command -v gh >/dev/null 2>&1'; then
+  success "GitHub CLI is available."
+else
+  warn "GitHub CLI not found — attempting to install in container..."
+  devcontainer exec --workspace-folder . sh -lc '
+    set -e
+    if command -v apt-get >/dev/null 2>&1; then
+      if command -v sudo >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install -y gh
+      elif [ "$(id -u)" -eq 0 ]; then
+        apt-get update
+        apt-get install -y gh
+      else
+        echo "Cannot auto-install gh: need sudo or root in container." >&2
+        exit 1
+      fi
+    else
+      echo "Cannot auto-install gh: apt-get is unavailable in this container image." >&2
+      exit 1
+    fi
+  ' || error "Failed to install GitHub CLI (gh) in container."
+
+  devcontainer exec --workspace-folder . sh -lc 'command -v gh >/dev/null 2>&1' \
+    || error "GitHub CLI (gh) is still unavailable after install attempt."
+  success "GitHub CLI installed and verified."
+fi
+
+info "GitHub CLI version inside container:"
+devcontainer exec --workspace-folder . gh --version || error "Failed to run gh --version inside container."
+
+# ── 13. Run opencode inside the container ─────────────────────────────────────
 info "Launching opencode inside the container..."
 print ""
 devcontainer exec --workspace-folder . opencode || true
 
-# ── 13. Stop container when opencode exits ────────────────────────────────────
+# ── 14. Stop container when opencode exits ────────────────────────────────────
 if [[ -n "$CONTAINER_ID" ]]; then
   info "opencode exited — stopping container ${CONTAINER_ID:0:12}..."
   docker stop "$CONTAINER_ID" &>/dev/null && success "Container stopped." || warn "Could not stop container — may already be stopped."
