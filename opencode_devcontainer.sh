@@ -69,7 +69,7 @@ fi
 if [[ ! -f "$DEVCONTAINER_FILE" || ! -s "$DEVCONTAINER_FILE" ]] || ! jq -e . "$DEVCONTAINER_FILE" &>/dev/null; then
   info "devcontainer.json missing or invalid — initializing with default."
   mkdir -p "$DEVCONTAINER_DIR"
-  printf '{\n  "name": "Dev Container",\n  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",\n  "remoteUser": "%s",\n  "features": {},\n  "mounts": []\n}\n' "$CONTAINER_USER" > "$DEVCONTAINER_FILE"
+  printf '{\n  "name": "Dev Container",\n  "image": "mcr.microsoft.com/devcontainers/python:3",\n  "remoteUser": "%s",\n  "features": {},\n  "mounts": []\n}\n' "$CONTAINER_USER" > "$DEVCONTAINER_FILE"
 fi
 
 ORIGINAL=$(cat "$DEVCONTAINER_FILE")
@@ -78,9 +78,9 @@ UPDATED="$ORIGINAL"
 # ── 3. Add image if missing ───────────────────────────────────────────────────
 HAS_IMAGE=$(printf '%s\n' "$UPDATED" | jq 'if .image or .dockerFile or .dockerComposeFile then true else false end')
 if [[ "$HAS_IMAGE" == "false" ]]; then
-  info "No image specified — adding default base image..."
-    UPDATED=$(printf '%s\n' "$UPDATED" | jq -c '.image = "mcr.microsoft.com/devcontainers/base:ubuntu"')
-  success "Added image: mcr.microsoft.com/devcontainers/base:ubuntu"
+  info "No image specified — adding default Python image..."
+    UPDATED=$(printf '%s\n' "$UPDATED" | jq -c '.image = "mcr.microsoft.com/devcontainers/python:3"')
+  success "Added image: mcr.microsoft.com/devcontainers/python:3"
 else
   info "Image already specified, skipping."
 fi
@@ -109,19 +109,7 @@ else
   info "github-cli feature already present, skipping."
 fi
 
-# ── 4c. Add python feature if missing ──────────────────────────────────────────
-PYTHON_FEATURE="ghcr.io/devcontainers/features/python:1"
-HAS_PYTHON_FEATURE=$(printf '%s\n' "$UPDATED" | jq --arg f "$PYTHON_FEATURE" \
-  'if .features | has($f) then true else false end')
-if [[ "$HAS_PYTHON_FEATURE" == "false" ]]; then
-  info "Adding python feature..."
-  UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg f "$PYTHON_FEATURE" '.features[$f] = {}')
-  success "Added feature: ${PYTHON_FEATURE}"
-else
-  info "python feature already present, skipping."
-fi
-
-# ── 4d. Add node feature if missing ───────────────────────────────────────────
+# ── 4b. Add node feature if missing ───────────────────────────────────────────
 NODE_FEATURE="ghcr.io/devcontainers/features/node:1"
 HAS_NODE_FEATURE=$(printf '%s\n' "$UPDATED" | jq --arg f "$NODE_FEATURE" \
   'if .features | has($f) then true else false end')
@@ -133,7 +121,7 @@ else
   info "node feature already present, skipping."
 fi
 
-# ── 4e. Ensure remoteUser is set correctly ────────────────────────────────────
+# ── 4c. Ensure remoteUser is set correctly ────────────────────────────────────
 CURRENT_USER=$(printf '%s\n' "$UPDATED" | jq -r '.remoteUser // empty')
 if [[ "$CURRENT_USER" != "$CONTAINER_USER" ]]; then
   info "Setting remoteUser to '${CONTAINER_USER}'..."
@@ -192,7 +180,7 @@ UPDATED=$(printf '%s\n' "$UPDATED" | jq -c '
   ]')
 
 # Inject postCreateCommand to generate opencode.json and install pytest
-info "Configuring inline opencode.json and Python tools..."
+info "Configuring inline opencode.json and dev tools..."
 COMMAND='mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json << '"'"'EOF'"'"'
 {
   "$schema": "https://opencode.ai/config.json",
@@ -203,7 +191,7 @@ COMMAND='mkdir -p ~/.config/opencode && cat > ~/.config/opencode/opencode.json <
   ]
 }
 EOF
-pip install --break-system-packages pytest 2>/dev/null || pip install pytest'
+pip install pytest'
 
 UPDATED=$(printf '%s\n' "$UPDATED" | jq -c --arg cmd "$COMMAND" '.postCreateCommand = $cmd')
 
